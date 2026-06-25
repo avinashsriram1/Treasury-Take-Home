@@ -1,0 +1,14 @@
+{
+  "products": [
+    {
+      "product_id": "demo-1",
+      "brand_name": "North Orchard",
+      "class_type": "Cider",
+      "alcohol_content": "6.2%",
+      "net_contents": "355 mL",
+      "country": "United States",
+      "images": ["north-orchard-front.png", "north-orchard-back.png"]
+    }
+  ]
+}
+
