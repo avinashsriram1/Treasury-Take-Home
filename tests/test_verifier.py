@@ -1,11 +1,4 @@
-from app.models import (
-    CheckStatus,
-    ExpectedFields,
-    ExtractedField,
-    ExtractionResult,
-    ProcessingMode,
-    Verdict,
-)
+from app.models import CheckStatus, ExpectedFields, ExtractedField, ExtractionResult, ProcessingMode, Verdict
 from app.services.verifier import parse_abv, parse_net_ml, verify_extraction
 
 
@@ -102,3 +95,19 @@ def test_government_warning_missing_hard_fails():
         extraction,
     )
     assert verified.verdict == Verdict.fail
+
+
+def test_no_application_fields_are_not_checked():
+    extraction = ExtractionResult(
+        fields={
+            "brand_name": ExtractedField(value="North Orchard", confidence=0.9),
+            "class_type": ExtractedField(value="Cider", confidence=0.9),
+            "alcohol_content": ExtractedField(value="6.2%", confidence=0.9),
+            "net_contents": ExtractedField(value="355 mL", confidence=0.9),
+        },
+        government_warning=warning_ok(),
+    )
+    verified = result(ExpectedFields(), extraction)
+    assert verified.verdict == Verdict.pass_
+    assert verified.fields["brand_name"].status == CheckStatus.not_checked
+    assert verified.fields["alcohol_content"].observed == "6.2%"

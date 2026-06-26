@@ -16,7 +16,7 @@ from app.models import (
 )
 
 CLASS_ALIASES = {
-    "wine": {"wine", "white wine", "red wine", "rose wine", "rosé wine", "still wine"},
+    "wine": {"wine", "white wine", "red wine", "rose wine", "ros? wine", "still wine"},
     "beer": {"beer", "lager", "ale", "stout", "porter", "malt beverage"},
     "cider": {"cider", "hard cider"},
     "spirits": {
@@ -44,7 +44,7 @@ COUNTRY_ALIASES = {
         "u.s.",
         "america",
     },
-    "austria": {"austria", "osterreich", "österreich"},
+    "austria": {"austria", "osterreich", "?sterreich"},
     "germany": {"germany", "deutschland"},
     "france": {"france"},
     "italy": {"italy"},
@@ -124,11 +124,9 @@ def verify_extraction(
         "class_type": check_class_type(expected.class_type, extraction),
         "alcohol_content": check_abv(expected.alcohol_content, extraction),
         "net_contents": check_net_contents(expected.net_contents, extraction),
+        "bottler": check_text("bottler", "Name and address of bottler/producer", expected.bottler, extraction),
+        "country": check_country(expected.country, extraction),
     }
-    if expected.bottler:
-        fields["bottler"] = check_text("bottler", "Bottler/producer", expected.bottler, extraction)
-    if expected.country:
-        fields["country"] = check_country(expected.country, extraction)
 
     warning = check_government_warning(extraction.government_warning)
     verdict = aggregate_verdict(fields, warning.status)
@@ -150,26 +148,29 @@ def verify_extraction(
         image_count=image_count,
         latency_ms=latency_ms,
         notes=extraction.notes,
+        stage_timings=extraction.stage_timings,
+        fallback_used=extraction.fallback_used,
     )
 
 
-def check_text(
-    field: str, label: str, expected: str | None, extraction: ExtractionResult
-) -> FieldCheck:
-    expected = clean(expected)
-    if not expected:
-        return FieldCheck(
-            field=field,
-            expected=None,
-            observed=None,
-            status=CheckStatus.review,
-            confidence=0.0,
-            detail=f"{label} was not provided in the application data.",
-        )
+def not_checked_field(field: str, label: str, observed: str | None, confidence: float = 0.0) -> FieldCheck:
+    return FieldCheck(
+        field=field,
+        expected=None,
+        observed=observed,
+        status=CheckStatus.not_checked,
+        confidence=confidence,
+        detail=f"{label} was not supplied in the application data, so this field was not compared.",
+    )
 
+
+def check_text(field: str, label: str, expected: str | None, extraction: ExtractionResult) -> FieldCheck:
+    expected = clean(expected)
     extracted = extraction.fields.get(field)
     observed = clean(extracted.value if extracted else None)
     confidence = extracted.confidence if extracted else 0.0
+    if not expected:
+        return not_checked_field(field, label, observed, confidence)
     if not observed:
         return missing_field(field, label, expected)
 
@@ -210,17 +211,10 @@ def check_text(
 
 def check_class_type(expected: str | None, extraction: ExtractionResult) -> FieldCheck:
     expected = clean(expected)
-    if not expected:
-        return FieldCheck(
-            field="class_type",
-            expected=None,
-            observed=None,
-            status=CheckStatus.review,
-            confidence=0.0,
-            detail="Class/type was not provided in the application data.",
-        )
     extracted = extraction.fields.get("class_type")
     observed = clean(extracted.value if extracted else None)
+    if not expected:
+        return not_checked_field("class_type", "Class/type", observed, extracted.confidence if extracted else 0.0)
     if not observed:
         return missing_field("class_type", "Class/type", expected)
 
@@ -259,14 +253,11 @@ def check_class_type(expected: str | None, extraction: ExtractionResult) -> Fiel
 
 def check_abv(expected: str | None, extraction: ExtractionResult) -> FieldCheck:
     expected = clean(expected)
+    extracted = extraction.fields.get("alcohol_content")
+    observed = clean(extracted.value if extracted else None)
     if not expected:
-        return FieldCheck(
-            field="alcohol_content",
-            expected=None,
-            observed=None,
-            status=CheckStatus.review,
-            confidence=0.0,
-            detail="Alcohol content was not provided in the application data.",
+        return not_checked_field(
+            "alcohol_content", "Alcohol content", observed, extracted.confidence if extracted else 0.0
         )
     expected_abv = parse_abv(expected)
     if expected_abv is None:
@@ -278,19 +269,11 @@ def check_abv(expected: str | None, extraction: ExtractionResult) -> FieldCheck:
             confidence=0.0,
             detail="Expected alcohol content could not be parsed.",
         )
-    extracted = extraction.fields.get("alcohol_content")
-    observed = clean(extracted.value if extracted else None)
     observed_abv = parse_abv(observed)
     if observed_abv is None:
         return missing_field("alcohol_content", "Alcohol content", expected)
     delta = abs(expected_abv - observed_abv)
-    status = (
-        CheckStatus.pass_
-        if delta <= 0.15
-        else CheckStatus.review
-        if delta <= 0.5
-        else CheckStatus.fail
-    )
+    status = CheckStatus.pass_ if delta <= 0.15 else CheckStatus.review if delta <= 0.5 else CheckStatus.fail
     detail = (
         "Alcohol content matches."
         if status == CheckStatus.pass_
@@ -311,18 +294,11 @@ def check_abv(expected: str | None, extraction: ExtractionResult) -> FieldCheck:
 
 def check_net_contents(expected: str | None, extraction: ExtractionResult) -> FieldCheck:
     expected = clean(expected)
-    if not expected:
-        return FieldCheck(
-            field="net_contents",
-            expected=None,
-            observed=None,
-            status=CheckStatus.review,
-            confidence=0.0,
-            detail="Net contents were not provided in the application data.",
-        )
-    expected_ml = parse_net_ml(expected)
     extracted = extraction.fields.get("net_contents")
     observed = clean(extracted.value if extracted else None)
+    if not expected:
+        return not_checked_field("net_contents", "Net contents", observed, extracted.confidence if extracted else 0.0)
+    expected_ml = parse_net_ml(expected)
     observed_ml = parse_net_ml(observed)
     if expected_ml is None:
         return FieldCheck(
@@ -358,14 +334,7 @@ def check_country(expected: str | None, extraction: ExtractionResult) -> FieldCh
     extracted = extraction.fields.get("country")
     observed = clean(extracted.value if extracted else None)
     if not expected:
-        return FieldCheck(
-            field="country",
-            expected=None,
-            observed=None,
-            status=CheckStatus.missing,
-            confidence=0.0,
-            detail="Country was not provided in the application data.",
-        )
+        return not_checked_field("country", "Country of origin", observed, extracted.confidence if extracted else 0.0)
     if not observed:
         return missing_field("country", "Country", expected)
     expected_norm = normalize_country(expected)
@@ -426,23 +395,20 @@ def check_government_warning(warning: GovernmentWarningExtraction) -> WarningChe
 def aggregate_verdict(fields: dict[str, FieldCheck], warning_status: CheckStatus) -> Verdict:
     if warning_status in {CheckStatus.fail, CheckStatus.missing}:
         return Verdict.fail
+    checked_fields = [field for field in fields.values() if field.status != CheckStatus.not_checked]
     missing_observed = [
         field
-        for field in fields.values()
-        if field.expected
-        and field.observed is None
-        and field.status in {CheckStatus.fail, CheckStatus.missing}
+        for field in checked_fields
+        if field.expected and field.observed is None and field.status in {CheckStatus.fail, CheckStatus.missing}
     ]
     if len(missing_observed) >= 2:
         return Verdict.fail
-    if any(
-        field.status == CheckStatus.fail and field.observed is not None for field in fields.values()
-    ):
+    if any(field.status == CheckStatus.fail and field.observed is not None for field in checked_fields):
         return Verdict.fail
     if len(missing_observed) == 1:
         return Verdict.review
     if warning_status == CheckStatus.review or any(
-        field.status in {CheckStatus.review, CheckStatus.missing} for field in fields.values()
+        field.status in {CheckStatus.review, CheckStatus.missing} for field in checked_fields
     ):
         return Verdict.review
     return Verdict.pass_
@@ -510,9 +476,7 @@ def format_abv(abv: float, original: str | None) -> str:
 def parse_net_ml(value: str | None) -> float | None:
     if not value:
         return None
-    match = re.search(
-        r"(\d+(?:\.\d+)?)\s*(ml|milliliter|millilitre|l|liter|litre|cl|oz)", value.lower()
-    )
+    match = re.search(r"(\d+(?:\.\d+)?)\s*(ml|milliliter|millilitre|l|liter|litre|cl|oz)", value.lower())
     if not match:
         return None
     amount = float(match.group(1))
@@ -539,10 +503,9 @@ def normalize_country(value: str | None) -> str | None:
 
 
 def infer_us_from_location(value: str) -> str | None:
-    if re.search(r",\s*([A-Z]{2})(?:\b|$)", value):
-        state = re.search(r",\s*([A-Z]{2})(?:\b|$)", value)
-        if state and state.group(1) in US_STATE_CODES:
-            return "united states"
+    state = re.search(r",\s*([A-Z]{2})(?:\b|$)", value)
+    if state and state.group(1) in US_STATE_CODES:
+        return "united states"
     return None
 
 

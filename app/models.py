@@ -17,6 +17,7 @@ class CheckStatus(str, Enum):
     review = "review"
     fail = "fail"
     missing = "missing"
+    not_checked = "not_checked"
 
 
 class ProcessingMode(str, Enum):
@@ -57,11 +58,14 @@ class GovernmentWarningExtraction(BaseModel):
     evidence: str | None = None
 
 
+class StageTiming(BaseModel):
+    stage: str
+    elapsed_ms: int
+
+
 class ExtractionResult(BaseModel):
     fields: dict[str, ExtractedField] = Field(default_factory=dict)
-    government_warning: GovernmentWarningExtraction = Field(
-        default_factory=GovernmentWarningExtraction
-    )
+    government_warning: GovernmentWarningExtraction = Field(default_factory=GovernmentWarningExtraction)
     raw_text: str = ""
     confidence: float = 0.0
     notes: list[str] = Field(default_factory=list)
@@ -69,6 +73,8 @@ class ExtractionResult(BaseModel):
     provider: str | None = None
     token_usage: dict[str, Any] | None = None
     latency_ms: int = 0
+    stage_timings: list[StageTiming] = Field(default_factory=list)
+    fallback_used: bool = False
 
 
 class FieldCheck(BaseModel):
@@ -108,6 +114,17 @@ class VerificationResult(BaseModel):
     image_count: int
     latency_ms: int
     notes: list[str] = Field(default_factory=list)
+    stage_timings: list[StageTiming] = Field(default_factory=list)
+    fallback_used: bool = False
+
+
+class BatchMetrics(BaseModel):
+    average_latency_ms: int = 0
+    p50_latency_ms: int = 0
+    p95_latency_ms: int = 0
+    slowest_product_id: str | None = None
+    slowest_latency_ms: int = 0
+    throughput_images_per_minute: float = 0.0
 
 
 class BatchJob(BaseModel):
@@ -118,6 +135,7 @@ class BatchJob(BaseModel):
     counts: dict[str, int]
     results: list[VerificationResult]
     errors: list[str] = Field(default_factory=list)
+    metrics: BatchMetrics = Field(default_factory=BatchMetrics)
 
 
 class CorrectionRecord(BaseModel):
