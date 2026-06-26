@@ -142,8 +142,8 @@ Required GitHub repository secrets:
 - `AZURE_CREDENTIALS`
 - `ACR_NAME`
 - `ACR_LOGIN_SERVER`
-- `AZURE_CONTAINER_APP_NAME`
-- `AZURE_RESOURCE_GROUP`
+- `AZURE_CONTAINER_APP_NAME=ttb-label-verifier`
+- `AZURE_RESOURCE_GROUP=ttb-label-verifier-rg`
 - `AZURE_FOUNDRY_API_KEY`
 
 Required GitHub repository variables:
@@ -175,6 +175,19 @@ https://ttb-label-verifier.greensea-d13af920.eastus2.azurecontainerapps.io
 ```
 
 This is the same URL as the earlier Rust app only if the GitHub Actions secret `AZURE_CONTAINER_APP_NAME` points to the same Azure Container App, `ttb-label-verifier`. If you create a new Container App for V3, Azure will generate a different FQDN.
+
+## Rust-to-Python Cutover
+
+This repository is configured to replace the old Rust image in-place.
+
+Use these exact GitHub Actions settings if you want the existing public URL to serve the Python app:
+
+- `AZURE_CONTAINER_APP_NAME=ttb-label-verifier`
+- `AZURE_RESOURCE_GROUP=ttb-label-verifier-rg`
+- `AZURE_FOUNDRY_ENDPOINT=https://ttb-label-verifier-resource.services.ai.azure.com/api/projects/ttb-label-verifier/openai/v1/`
+- `AZURE_FOUNDRY_DEPLOYMENT=gpt-4.1-mini`
+
+Once a `main` deploy succeeds, Azure Container Apps will keep the same public URL and swap the running image from Rust to Python. If the URL still shows the Rust UI, the deploy did not complete successfully or the repository secrets point at the wrong Azure resources.
 
 ## COLA Test Data Utility
 

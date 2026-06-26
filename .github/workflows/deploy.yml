@@ -8,6 +8,8 @@ on:
 env:
   IMAGE_NAME: treasury-take-home-v3
   PYTHON_VERSION: "3.12"
+  EXPECTED_CONTAINER_APP_NAME: ttb-label-verifier
+  EXPECTED_RESOURCE_GROUP: ttb-label-verifier-rg
 
 jobs:
   test:
@@ -44,6 +46,17 @@ jobs:
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Verify deployment target
+        run: |
+          if [ "${{ secrets.AZURE_CONTAINER_APP_NAME }}" != "${EXPECTED_CONTAINER_APP_NAME}" ]; then
+            echo "AZURE_CONTAINER_APP_NAME must be ${EXPECTED_CONTAINER_APP_NAME} to reuse the existing public URL."
+            exit 1
+          fi
+          if [ "${{ secrets.AZURE_RESOURCE_GROUP }}" != "${EXPECTED_RESOURCE_GROUP}" ]; then
+            echo "AZURE_RESOURCE_GROUP must be ${EXPECTED_RESOURCE_GROUP} to update the existing app."
+            exit 1
+          fi
 
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ secrets.ACR_NAME }}
@@ -83,3 +96,11 @@ jobs:
               SHOW_RAW_EXTRACTION=false \
               LLM_BATCH_PARALLELISM="${{ vars.LLM_BATCH_PARALLELISM || '2' }}" \
               LOCAL_OCR_BATCH_PARALLELISM="${{ vars.LOCAL_OCR_BATCH_PARALLELISM || '2' }}"
+
+      - name: Verify active image and URL
+        run: |
+          az containerapp show \
+            --name "${{ secrets.AZURE_CONTAINER_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --query "{fqdn:properties.configuration.ingress.fqdn,image:properties.template.containers[0].image}" \
+            -o json
