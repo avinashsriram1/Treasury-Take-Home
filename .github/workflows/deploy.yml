@@ -8,7 +8,7 @@ on:
 env:
   IMAGE_NAME: treasury-take-home-v3
   PYTHON_VERSION: "3.12"
-  EXPECTED_CONTAINER_APP_NAME: ttb-label-verifier
+  EXPECTED_CONTAINER_APP_NAME: treasury-take-home-v3
   EXPECTED_RESOURCE_GROUP: ttb-label-verifier-rg
 
 jobs:
