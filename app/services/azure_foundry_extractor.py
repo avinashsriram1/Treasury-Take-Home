@@ -63,13 +63,17 @@ async def request_foundry_model(
     expected: ExpectedFields,
 ) -> ExtractionResult:
     prep_started = time.perf_counter()
-    image_payload = contact_sheet_base64_jpeg(images)
+    image_payload = contact_sheet_base64_jpeg(
+        images,
+        long_edge=settings.azure_foundry_max_image_long_edge,
+        quality=settings.azure_foundry_jpeg_quality,
+    )
     prep_ms = int((time.perf_counter() - prep_started) * 1000)
+    expected_context = expected.model_dump(exclude_none=True)
     prompt = (
-        f"{SYSTEM_PROMPT}\n\n"
-        "Extract fields from the image(s) as one alcohol label product. "
-        "Use null for unknown values. Return compact JSON only. "
-        f"Application context: {expected.model_dump(exclude_none=True)}"
+        f"{SYSTEM_PROMPT}\n"
+        "Read all images as one alcohol label product. Compare against this optional application context: "
+        f"{expected_context}. Return only the requested JSON keys."
     )
     request = {
         "model": deployment,
@@ -89,15 +93,20 @@ async def request_foundry_model(
     }
     client = await foundry_client()
     request_started = time.perf_counter()
-    response = await client.post(
-        f"{foundry_base_url()}/responses",
-        headers={
-            "Authorization": f"Bearer {settings.azure_foundry_api_key}",
-            "api-key": settings.azure_foundry_api_key,
-            "Content-Type": "application/json",
-        },
-        json=request,
-    )
+    try:
+        response = await client.post(
+            f"{foundry_base_url()}/responses",
+            headers={
+                "Authorization": f"Bearer {settings.azure_foundry_api_key}",
+                "api-key": settings.azure_foundry_api_key,
+                "Content-Type": "application/json",
+            },
+            json=request,
+        )
+    except httpx.TimeoutException as exc:
+        raise AzureFoundryExtractionError("Azure Foundry request timed out") from exc
+    except httpx.HTTPError as exc:
+        raise AzureFoundryExtractionError(f"Azure Foundry request failed: {exc}") from exc
     request_ms = int((time.perf_counter() - request_started) * 1000)
     if response.status_code >= 400:
         detail = response.text[:500].replace("\n", " ")

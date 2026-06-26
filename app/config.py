@@ -31,13 +31,15 @@ def is_free_openrouter_model(model: str) -> bool:
 @dataclass(frozen=True)
 class Settings:
     processing_mode: str = os.getenv("PROCESSING_MODE", "llm")
-    llm_provider: str = os.getenv("LLM_PROVIDER", "openrouter").strip().lower()
+    llm_provider: str = os.getenv("LLM_PROVIDER", "azure_foundry").strip().lower()
     azure_foundry_endpoint: str | None = os.getenv("AZURE_FOUNDRY_ENDPOINT")
     azure_foundry_api_key: str | None = os.getenv("AZURE_FOUNDRY_API_KEY")
     azure_foundry_deployment: str = os.getenv("AZURE_FOUNDRY_DEPLOYMENT", "gpt-4.1-mini")
-    azure_foundry_request_timeout_seconds: int = _int_env("AZURE_FOUNDRY_REQUEST_TIMEOUT_SECONDS", 10)
+    azure_foundry_request_timeout_seconds: int = _int_env("AZURE_FOUNDRY_REQUEST_TIMEOUT_SECONDS", 5)
     azure_foundry_connect_timeout_seconds: int = _int_env("AZURE_FOUNDRY_CONNECT_TIMEOUT_SECONDS", 2)
-    azure_foundry_max_output_tokens: int = _int_env("AZURE_FOUNDRY_MAX_OUTPUT_TOKENS", 500)
+    azure_foundry_max_output_tokens: int = _int_env("AZURE_FOUNDRY_MAX_OUTPUT_TOKENS", 320)
+    azure_foundry_max_image_long_edge: int = _int_env("AZURE_FOUNDRY_MAX_IMAGE_LONG_EDGE", 768)
+    azure_foundry_jpeg_quality: int = min(95, _int_env("AZURE_FOUNDRY_JPEG_QUALITY", 48))
     openrouter_api_key: str | None = os.getenv("OPENROUTER_API_KEY")
     openrouter_model: str = os.getenv("OPENROUTER_MODEL", "google/gemma-4-26b-a4b-it:free")
     openrouter_fallback_models: tuple[str, ...] = _csv_env("OPENROUTER_FALLBACK_MODELS", "openrouter/free")
@@ -87,3 +89,5 @@ class Settings:
 
 
 settings = Settings()
+
+

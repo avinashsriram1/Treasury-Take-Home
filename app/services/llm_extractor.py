@@ -15,13 +15,11 @@ from app.config import is_free_openrouter_model, settings
 from app.models import ExpectedFields, ExtractedField, ExtractionResult, StageTiming, UploadedImage
 
 SYSTEM_PROMPT = (
-    "Extract visible alcohol label fields for TTB review. Return JSON only with keys: "
-    "fields.brand_name, fields.class_type, fields.alcohol_content, fields.net_contents, "
-    "fields.bottler, fields.country, government_warning.present, government_warning.heading_text, "
-    "government_warning.heading_all_caps, confidence, notes. Each field value is an object with "
-    "value, confidence, evidence. Use null when unknown. Do not decide the final verdict."
+    "Return compact JSON only. Use flat keys fields.brand_name, fields.class_type, fields.alcohol_content, "
+    "fields.net_contents, fields.bottler, fields.country, government_warning.present, "
+    "government_warning.heading_text, government_warning.heading_all_caps, confidence, notes. "
+    "Field values are objects with value and confidence only. Use null when unknown. No markdown. No evidence."
 )
-
 
 class OpenRouterExtractionError(RuntimeError):
     pass
@@ -325,19 +323,22 @@ def extract_top_level_number(content: str, key: str) -> float | None:
     return float(match.group(1)) if match else None
 
 
-def contact_sheet_base64_jpeg(images: list[UploadedImage]) -> str:
+def contact_sheet_base64_jpeg(
+    images: list[UploadedImage], *, long_edge: int | None = None, quality: int | None = None
+) -> str:
+    max_edge = long_edge or settings.openrouter_max_image_long_edge
+    jpeg_quality = quality or settings.openrouter_jpeg_quality
     if len(images) == 1:
         return image_to_base64_jpeg(
             images[0].content,
-            long_edge=settings.openrouter_max_image_long_edge,
-            quality=settings.openrouter_jpeg_quality,
+            long_edge=max_edge,
+            quality=jpeg_quality,
         )
 
     columns = 2
-    max_edge = settings.openrouter_max_image_long_edge
-    tile_w = max(320, max_edge // columns)
-    tile_h = max(420, int(tile_w * 1.3))
-    label_h = 24
+    tile_w = max(280, max_edge // columns)
+    tile_h = max(360, int(tile_w * 1.28))
+    label_h = 20
     thumbs: list[tuple[UploadedImage, Image.Image]] = []
     for uploaded in images:
         image = Image.open(BytesIO(uploaded.content)).convert("RGB")
@@ -352,15 +353,14 @@ def contact_sheet_base64_jpeg(images: list[UploadedImage]) -> str:
         x = (index % columns) * tile_w
         y = (index // columns) * tile_h
         draw.rectangle((x, y, x + tile_w - 1, y + tile_h - 1), outline="#d0d7de", width=1)
-        draw.text((x + 6, y + 5), f"Image {index + 1}: {uploaded.filename[:42]}", fill="#111827")
+        draw.text((x + 5, y + 3), f"Image {index + 1}: {uploaded.filename[:36]}", fill="#111827")
         paste_x = x + (tile_w - image.width) // 2
         paste_y = y + label_h + ((tile_h - label_h) - image.height) // 2
         sheet.paste(image, (paste_x, paste_y))
 
     output = BytesIO()
-    sheet.save(output, format="JPEG", quality=settings.openrouter_jpeg_quality, optimize=True)
+    sheet.save(output, format="JPEG", quality=jpeg_quality, optimize=True)
     return base64.b64encode(output.getvalue()).decode("ascii")
-
 
 def image_to_base64_jpeg(bytes_: bytes, *, long_edge: int, quality: int) -> str:
     image = Image.open(BytesIO(bytes_)).convert("RGB")

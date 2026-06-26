@@ -89,10 +89,12 @@ def test_extract_with_azure_foundry_posts_to_responses_endpoint(monkeypatch):
             azure_foundry_api_key="test-key",
             azure_foundry_deployment="gpt-4.1-mini",
             azure_foundry_max_output_tokens=50,
+            azure_foundry_max_image_long_edge=768,
+            azure_foundry_jpeg_quality=48,
         ),
     )
     monkeypatch.setattr(azure_foundry_extractor, "foundry_client", fake_foundry_client)
-    monkeypatch.setattr(azure_foundry_extractor, "contact_sheet_base64_jpeg", lambda _images: "abc123")
+    monkeypatch.setattr(azure_foundry_extractor, "contact_sheet_base64_jpeg", lambda _images, **_kwargs: "abc123")
 
     result = asyncio.run(
         extract_with_azure_foundry(
@@ -135,10 +137,12 @@ def test_azure_foundry_parse_failure_logs_and_keeps_raw_output(monkeypatch, capl
             azure_foundry_api_key="test-key",
             azure_foundry_deployment="gpt-4.1-mini",
             azure_foundry_max_output_tokens=50,
+            azure_foundry_max_image_long_edge=768,
+            azure_foundry_jpeg_quality=48,
         ),
     )
     monkeypatch.setattr(azure_foundry_extractor, "foundry_client", fake_foundry_client)
-    monkeypatch.setattr(azure_foundry_extractor, "contact_sheet_base64_jpeg", lambda _images: "abc123")
+    monkeypatch.setattr(azure_foundry_extractor, "contact_sheet_base64_jpeg", lambda _images, **_kwargs: "abc123")
 
     with caplog.at_level("WARNING"), pytest.raises(AzureFoundryExtractionError) as exc_info:
         asyncio.run(
@@ -149,5 +153,6 @@ def test_azure_foundry_parse_failure_logs_and_keeps_raw_output(monkeypatch, capl
 
     assert "not JSON" in exc_info.value.raw_output
     assert "Azure Foundry response parse failed" in caplog.text
+
 
 

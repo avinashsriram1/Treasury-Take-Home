@@ -1,4 +1,4 @@
-name: Deploy to Azure Container Apps
+name: CI/CD - Azure Container Apps
 
 on:
   push:
@@ -7,10 +7,36 @@ on:
 
 env:
   IMAGE_NAME: treasury-take-home-v3
+  PYTHON_VERSION: "3.12"
 
 jobs:
-  build-and-deploy:
+  test:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check
+
+      - name: Test
+        run: pytest
+
+  build-and-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -29,19 +55,31 @@ jobs:
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
+      - name: Ensure application secrets exist
+        run: |
+          az containerapp secret set \
+            --name "${{ secrets.AZURE_CONTAINER_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --secrets azure-foundry-api-key="${{ secrets.AZURE_FOUNDRY_API_KEY }}"
+
       - name: Deploy to Azure Container Apps
         run: |
           az containerapp update \
-            --name ${{ secrets.AZURE_CONTAINER_APP_NAME }} \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name "${{ secrets.AZURE_CONTAINER_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
             --image "$IMAGE" \
             --set-env-vars \
               PROCESSING_MODE=llm \
-              OPENROUTER_BASE_URL=https://openrouter.ai/api/v1 \
-              OPENROUTER_MODEL=${{ vars.OPENROUTER_MODEL || 'nex-agi/nex-n2-pro' }} \
-              OPENROUTER_API_KEY=secretref:openrouter-api-key \
+              LLM_PROVIDER=azure_foundry \
+              AZURE_FOUNDRY_ENDPOINT="${{ vars.AZURE_FOUNDRY_ENDPOINT }}" \
+              AZURE_FOUNDRY_DEPLOYMENT="${{ vars.AZURE_FOUNDRY_DEPLOYMENT || 'gpt-4.1-mini' }}" \
+              AZURE_FOUNDRY_API_KEY=secretref:azure-foundry-api-key \
+              AZURE_FOUNDRY_REQUEST_TIMEOUT_SECONDS="${{ vars.AZURE_FOUNDRY_REQUEST_TIMEOUT_SECONDS || '5' }}" \
+              AZURE_FOUNDRY_CONNECT_TIMEOUT_SECONDS="${{ vars.AZURE_FOUNDRY_CONNECT_TIMEOUT_SECONDS || '2' }}" \
+              AZURE_FOUNDRY_MAX_OUTPUT_TOKENS="${{ vars.AZURE_FOUNDRY_MAX_OUTPUT_TOKENS || '320' }}" \
+              AZURE_FOUNDRY_MAX_IMAGE_LONG_EDGE="${{ vars.AZURE_FOUNDRY_MAX_IMAGE_LONG_EDGE || '768' }}" \
+              AZURE_FOUNDRY_JPEG_QUALITY="${{ vars.AZURE_FOUNDRY_JPEG_QUALITY || '48' }}" \
               ALLOW_LOCAL_OCR=true \
               SHOW_RAW_EXTRACTION=false \
-              BATCH_PARALLELISM=2 \
-              LLM_REQUEST_TIMEOUT_SECONDS=30
-
+              LLM_BATCH_PARALLELISM="${{ vars.LLM_BATCH_PARALLELISM || '2' }}" \
+              LOCAL_OCR_BATCH_PARALLELISM="${{ vars.LOCAL_OCR_BATCH_PARALLELISM || '2' }}"

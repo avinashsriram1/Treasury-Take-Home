@@ -1,81 +1,67 @@
 # Treasury Take Home V3
 
-AI-assisted TTB label verifier for agents who need one place to upload label images, compare them against application data when available, and resolve review/fail cases.
+AI-assisted TTB label verifier for agents who need one place to upload alcohol label images, compare them against application data, and resolve review/fail cases.
 
-V3 is **LLM-first** by default, using OpenRouter vision models for structured label extraction. The final compliance decision is still deterministic Python logic. Local Tesseract OCR remains available through an explicit **Local OCR Test** mode for offline/firewall demonstrations.
+**Live app:** https://ttb-label-verifier.greensea-d13af920.eastus2.azurecontainerapps.io
 
-## Impact Summary
+V3 is **Azure Foundry LLM-first** by default. The LLM extracts structured label evidence from one or more images, but the final Pass / Review / Fail verdict is still deterministic Python compliance logic. Local Tesseract OCR remains available through an explicit Local OCR mode for offline/firewall demonstrations.
 
-- Two-tab workflow: **Intake** for uploads and **Review** for agent resolution.
-- Supports single images, multi-image labels, folder uploads, and manifest-based batches.
-- Uses strict free-only OpenRouter routing by default; no paid model fallback.
-- Compresses label images into lightweight contact sheets to reduce latency and token cost.
-- Keeps raw extraction hidden unless server-side debug configuration allows it.
-- Applies deterministic TTB checks after extraction, including hard government-warning failures.
+## What This App Does
 
-## Key Policy Rules
+- Single-product verification with 1-4 images for front/back/side labels.
+- Batch verification with folder uploads and optional CSV/JSON manifests.
+- Optional application-field comparison for brand, class/type, ABV/proof, net contents, bottler/producer address, and country.
+- Government-warning check on every run.
+- Agent review queue for labels that need manual attention.
+- Dockerized FastAPI app deployed to Azure Container Apps through GitHub Actions.
+
+## Core Rules
 
 - Missing or non-all-caps `GOVERNMENT WARNING` is always Fail.
 - If application fields are omitted, they are marked `not_checked`, not failed.
-- If application fields are supplied, hard conflicts such as wrong ABV, wrong net contents, brand conflict, or country conflict can Fail.
+- If application fields are supplied, hard conflicts such as wrong ABV/proof, wrong net contents, brand conflict, or country conflict can Fail.
 - Exactly one missing observed application field is Review; two or more missing observed fields are Fail.
-- The LLM extracts structured evidence; Python code decides Pass, Review, or Fail.
+- The LLM only extracts evidence; Python code decides the verdict.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    A["Agent Intake UI"] --> B["FastAPI Backend"]
+    A["Agent Browser UI"] --> B["FastAPI Backend"]
     B --> C{"Processing Mode"}
-    C --> D["Free OpenRouter Vision Route"]
+    C --> D["Azure Foundry Vision LLM"]
     C --> E["Local Tesseract OCR Test"]
-    D --> F["Compact JSON Extraction"]
+    D --> F["Structured JSON Extraction"]
     E --> F
     F --> G["Deterministic Compliance Verifier"]
     G --> H["Pass / Review / Fail"]
     B --> I["Batch Queue + CSV Export"]
-    B --> J["Review Corrections"]
+    B --> J["Review Workflow"]
+    K["GitHub Actions"] --> L["Docker + Azure Container Apps"]
 ```
-
-## Free OpenRouter Configuration
-
-Default settings are intentionally free-only:
-
-```text
-OPENROUTER_REQUIRE_FREE=true
-OPENROUTER_MODEL=google/gemma-4-26b-a4b-it:free
-OPENROUTER_FALLBACK_MODELS=openrouter/free
-OPENROUTER_ALLOW_PAID_FALLBACK=false
-LLM_REQUEST_TIMEOUT_SECONDS=5
-OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-PROCESSING_MODE=llm
-ALLOW_LOCAL_OCR=true
-SHOW_RAW_EXTRACTION=false
-BATCH_PARALLELISM=2
-```
-
-The app rejects non-free model IDs when free mode is required. Accepted defaults are model IDs ending in `:free` or the `openrouter/free` router. If every free route times out, rate-limits, or fails, the app returns a Review result instead of silently using a paid model.
-
-Free OpenRouter routes are zero-cost routes, not unlimited production capacity. They may have lower rate limits, variable availability, or slower peak-time latency. The model stays configurable so the default can be changed if another free multimodal route benchmarks better.
-
-## LLM Efficiency Approach
-
-- Multi-image products are sent as one compressed contact sheet.
-- Images are resized to about a 1000px long edge and encoded as JPEG around quality 65.
-- The prompt requests compact structured JSON only, not full raw transcription.
-- `max_tokens` is capped around 700.
-- OpenRouter HTTP client reuse avoids repeated connection setup.
-- Batch parallelism is bounded to avoid rate-limit amplification.
 
 ## Run Locally
 
+From PowerShell:
+
 ```powershell
 cd C:\Users\NashS\OneDrive\Documents\Treasury-Take-Home
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements-dev.txt
-$env:OPENROUTER_API_KEY="your-key"
-uvicorn app.main:app --reload --port 8000
+copy .env.example .env
+notepad .env
+```
+
+In `.env`, set:
+
+```text
+AZURE_FOUNDRY_ENDPOINT=https://ttb-label-verifier-resource.services.ai.azure.com/api/projects/ttb-label-verifier/openai/v1/
+AZURE_FOUNDRY_API_KEY=your-foundry-key
+AZURE_FOUNDRY_DEPLOYMENT=gpt-4.1-mini
+```
+
+Then run:
+
+```powershell
+.\scripts\start_local.ps1
 ```
 
 Open:
@@ -84,55 +70,124 @@ Open:
 http://localhost:8000
 ```
 
-To run without OpenRouter, use the UI's **Run Local OCR Test** button and make sure Tesseract is installed locally.
+If you do not want to use Azure Foundry locally, turn on Local OCR mode in the UI and make sure Tesseract is installed.
+
+## Manual Local Commands
+
+If you do not want to use the startup script:
+
+```powershell
+cd C:\Users\NashS\OneDrive\Documents\Treasury-Take-Home
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt -r requirements-dev.txt
+
+$env:LLM_PROVIDER="azure_foundry"
+$env:AZURE_FOUNDRY_ENDPOINT="https://ttb-label-verifier-resource.services.ai.azure.com/api/projects/ttb-label-verifier/openai/v1/"
+$env:AZURE_FOUNDRY_API_KEY="your-foundry-key"
+$env:AZURE_FOUNDRY_DEPLOYMENT="gpt-4.1-mini"
+
+uvicorn app.main:app --reload --port 8000
+```
+
+## Performance Defaults
+
+Azure Foundry is configured for smaller request payloads and bounded output:
+
+```text
+AZURE_FOUNDRY_REQUEST_TIMEOUT_SECONDS=5
+AZURE_FOUNDRY_CONNECT_TIMEOUT_SECONDS=2
+AZURE_FOUNDRY_MAX_OUTPUT_TOKENS=320
+AZURE_FOUNDRY_MAX_IMAGE_LONG_EDGE=768
+AZURE_FOUNDRY_JPEG_QUALITY=48
+LLM_BATCH_PARALLELISM=2
+```
+
+These settings reduce image upload size and model output length. If latency is still above 5 seconds, the limiting factor is usually Azure model inference or queue time, not local Python processing.
 
 ## Docker
 
 ```powershell
 docker build -t treasury-take-home-v3 .
 docker run --rm -p 8000:8000 `
-  -e OPENROUTER_API_KEY="your-key" `
+  -e LLM_PROVIDER=azure_foundry `
+  -e AZURE_FOUNDRY_ENDPOINT="https://ttb-label-verifier-resource.services.ai.azure.com/api/projects/ttb-label-verifier/openai/v1/" `
+  -e AZURE_FOUNDRY_API_KEY="your-foundry-key" `
+  -e AZURE_FOUNDRY_DEPLOYMENT="gpt-4.1-mini" `
   treasury-take-home-v3
 ```
 
 ## Tests
 
 ```powershell
+.\.venv\Scripts\Activate.ps1
 pytest
 ruff check
+node --check app/static/app.js
 ```
 
-## Build a COLA Test Dataset
+## GitHub Actions Deployment
 
-For local testing, the repository includes a public COLA registry scraper that writes a batch-compatible manifest plus downloaded label images. This is not used by the production app; it is only for creating repeatable test data.
+The workflow at `.github/workflows/deploy.yml` runs on pushes to `main`:
 
-```powershell
-python scripts/scrape_cola_dataset.py --count 25 --out-dir data/cola_testing
-```
+1. Install dependencies.
+2. Run `ruff check`.
+3. Run `pytest`.
+4. Build a Docker image.
+5. Push the image to Azure Container Registry.
+6. Update Azure Container Apps with Azure Foundry environment variables.
 
-If Windows certificate validation fails in your local Python environment, use:
-
-```powershell
-python scripts/scrape_cola_dataset.py --count 25 --out-dir data/cola_testing --insecure-tls
-```
-
-Outputs:
-
-- `data/cola_testing/application_data.csv`
-- `data/cola_testing/manifest.json`
-- `data/cola_testing/label_images/`
-
-The `data/` directory is git-ignored so scraped public registry data is not committed by accident.
-
-## Deployment Notes
-
-The included GitHub Actions workflow builds a Docker image and updates Azure Container Apps on pushes to `main`. Configure these secrets before enabling the workflow:
+Required GitHub repository secrets:
 
 - `AZURE_CREDENTIALS`
 - `ACR_NAME`
 - `ACR_LOGIN_SERVER`
 - `AZURE_CONTAINER_APP_NAME`
 - `AZURE_RESOURCE_GROUP`
-- Container App secret: `openrouter-api-key`
+- `AZURE_FOUNDRY_API_KEY`
 
-Azure hosts the container. OpenRouter performs the default LLM image extraction, so V3 is not offline-first by default. Use Local OCR Test mode when the firewall/no-outbound scenario needs to be demonstrated.
+Required GitHub repository variables:
+
+- `AZURE_FOUNDRY_ENDPOINT`
+- `AZURE_FOUNDRY_DEPLOYMENT`
+
+Recommended optional variables:
+
+- `AZURE_FOUNDRY_REQUEST_TIMEOUT_SECONDS=5`
+- `AZURE_FOUNDRY_MAX_OUTPUT_TOKENS=320`
+- `AZURE_FOUNDRY_MAX_IMAGE_LONG_EDGE=768`
+- `AZURE_FOUNDRY_JPEG_QUALITY=48`
+- `LLM_BATCH_PARALLELISM=2`
+- `LOCAL_OCR_BATCH_PARALLELISM=2`
+
+## Azure App URL
+
+The current Container App FQDN is:
+
+```text
+ttb-label-verifier.greensea-d13af920.eastus2.azurecontainerapps.io
+```
+
+So the public URL is:
+
+```text
+https://ttb-label-verifier.greensea-d13af920.eastus2.azurecontainerapps.io
+```
+
+This is the same URL as the earlier Rust app only if the GitHub Actions secret `AZURE_CONTAINER_APP_NAME` points to the same Azure Container App, `ttb-label-verifier`. If you create a new Container App for V3, Azure will generate a different FQDN.
+
+## COLA Test Data Utility
+
+For local testing, the repository includes a public COLA registry scraper that writes a batch-compatible manifest plus downloaded label images. This is not used by the production app.
+
+```powershell
+python scripts/scrape_cola_dataset.py --count 25 --out-dir data/cola_testing
+```
+
+If Windows certificate validation fails locally:
+
+```powershell
+python scripts/scrape_cola_dataset.py --count 25 --out-dir data/cola_testing --insecure-tls
+```
+
+The `data/` directory is git-ignored so scraped data is not committed accidentally.
