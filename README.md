@@ -2,7 +2,7 @@
 
 AI-assisted TTB label verifier for agents who need one place to upload alcohol label images, compare them against application data, and resolve review/fail cases.
 
-**Live app:** [https://ttb-label-verifier.greensea-d13af920.eastus2.azurecontainerapps.io](https://treasury-take-home-v3.greensea-d13af920.eastus2.azurecontainerapps.io/)
+**Live app:** https://treasury-take-home-v3.greensea-d13af920.eastus2.azurecontainerapps.io/
 
 V3 is **Azure Foundry LLM-first** by default. The LLM extracts structured label evidence from one or more images, but the final Pass / Review / Fail verdict is still deterministic Python compliance logic. Local Tesseract OCR remains available through an explicit Local OCR mode for offline/firewall demonstrations.
 
