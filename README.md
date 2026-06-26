@@ -242,6 +242,17 @@ python scripts/scrape_cola_dataset.py `
   --insecure-tls
 ```
 
+For a smaller GitHub-friendly sample archive, generate 100 images instead:
+
+```powershell
+python scripts/scrape_cola_dataset.py `
+  --count 100 `
+  --single-count 10 `
+  --out-dir samples/cola-scale-small `
+  --zip `
+  --insecure-tls
+```
+
 Output:
 
 ```text
@@ -272,6 +283,8 @@ Single testing:
 - Upload its image and attach its `manifest.json`.
 
 The generated `samples/cola-scale` folder can be committed if the zipped outputs stay within GitHub size limits. Larger local datasets should stay under `data/`, which is git-ignored.
+
+For repository review, the smaller `samples/cola-scale-small` fixture is usually the better artifact to commit. It keeps the demo data manageable while still exercising both single-product verification and batch upload.
 
 ## Performance Controls
 
@@ -330,6 +343,7 @@ node --check app/static/app.js
 - This is a prototype for review assistance, not a replacement for final human authority.
 - Azure Foundry is the default mode because it is more accurate on image-heavy labels than local OCR.
 - Local OCR is intentionally available for offline/firewall demonstrations.
+- Application data is treated as authoritative and correctly entered by the upstream application workflow. The verifier directly compares label evidence against the supplied application fields rather than trying to repair or second-guess the application itself.
 - Application fields are optional; blank fields are not silently treated as matches.
 - Raw extraction text is a developer tool, not normal agent-facing output.
 - Batch jobs are in-memory for the prototype. A production COLA integration should use durable job storage.
